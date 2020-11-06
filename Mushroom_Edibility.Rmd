@@ -1,0 +1,334 @@
+---
+title: "Using Random Forests to Predict Mushroom Edibility."
+author: "Oscar Brooks"
+date: "05/05/2020"
+output: pdf_document
+---
+
+## Libraries and Import
+```{r warning=FALSE, message=FALSE}
+
+library(knitr) 
+library(ggplot2)
+library(tidyverse)
+library(ggrepel)
+library(kableExtra)
+library(randomForest)
+library(dagR)
+library(mltools)
+library(grid)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning=FALSE, message=FALSE}
+mushroom_data <- read.csv('mushrooms.csv', header = TRUE)
+```
+
+## 1. Fit Random Forest models using each possible input on its own to predict edibility. Evaluate the quality of fit by using the predict function to calculate the predicted class for each mushroom (edible or poisonous) (hint, you need type=’response’). Which input fits best? (i.e. which classifies the most mushrooms correctly?)
+
+We begin our assignment by importing the mushrooms.csv into our environment. Using the \textbf{summary()} command we can begin to understand the shape of our data.
+```{r}
+summary(mushroom_data)
+```
+As we can see the data consists of six variables ("Edible", "CapShape", "CapSurface", "CapColor", "Odor" and "Height" ) and 8124 variables. Taking edibility as our independant variable we want to use the remaining five varables will be used as dependent varaibles in the random forest models. To begin we need to split our data into both a training and validation sets upon which we will run our random forest. To allow for reproducability when creating our training and validation sets the \textbf{set.seed()} function before randomly sampling from our data. The data has been split with a 70:30 to allow for most of the data to be used for training. 
+
+```{r}
+set.seed(7)
+test_train_split = 0.7
+train_num = sample(length(mushroom_data$Edible) , test_train_split*length(mushroom_data$Edible) , replace = FALSE)
+train_set <- mushroom_data[train_num,]
+val_set <- mushroom_data[-train_num,]
+```
+
+Now we will create our random forest models using the \textbf{randomForest()} funtion using each of our dependent variables to soley predict edibility. For each variable we will return the confusion matrix produced by the random forest and the prediction accuracy.
+
+```{r}
+RF <- randomForest(Edible ~ ., data = train_set)
+CapShape_rf <- randomForest(Edible ~ CapShape, data = train_set)
+CapSurface_rf <- randomForest(Edible ~ CapSurface, data = train_set)
+CapColor_rf <- randomForest(Edible ~ CapColor, data = train_set)
+Odor_rf <- randomForest(Edible ~ Odor, data = train_set)
+Height_rf <- randomForest(Edible ~ Height, data = train_set)
+```
+
+
+```{r}
+CapShape_rf_pred <- predict(CapShape_rf, val_set[,-1], type = "response") #why type?
+table(val_set[,1],CapShape_rf_pred)
+
+CapShape_rf_pred_acc <-(table(val_set[,1],CapShape_rf_pred)[1,1] + table(val_set[,1],CapShape_rf_pred)[2,2])/(length(val_set[,1]))
+CapShape_rf_pred_acc
+```
+
+
+```{r}
+CapSurface_rf_pred <- predict(CapSurface_rf, val_set)
+table(val_set[,1],CapSurface_rf_pred)
+
+CapSurface_rf_pred_acc <-(table(val_set[,1],CapSurface_rf_pred)[1,1] + table(val_set[,1],CapSurface_rf_pred)[2,2])/(length(val_set[,1]))
+CapSurface_rf_pred_acc
+```
+```{r}
+CapColor_rf_pred <- predict(CapColor_rf, val_set)
+table(val_set[,1],CapColor_rf_pred)
+
+CapColour_rf_pred_acc <-(table(val_set[,1],CapColor_rf_pred)[1,1] + table(val_set[,1],CapColor_rf_pred)[2,2])/(length(val_set[,1]))
+CapColour_rf_pred_acc
+```
+```{r}
+Odor_rf_pred <- predict(Odor_rf, val_set)
+table(val_set[,1],Odor_rf_pred)
+
+Odor_rf_pred_acc <-(table(val_set[,1],Odor_rf_pred)[1,1] + table(val_set[,1],Odor_rf_pred)[2,2])/(length(val_set[,1]))
+Odor_rf_pred_acc 
+```
+
+```{r}
+Height_rf_pred <- predict(Height_rf, val_set)
+table(val_set[,1],Height_rf_pred)
+
+Height_rf_pred_acc <-(table(val_set[,1],Height_rf_pred)[1,1] + table(val_set[,1],Height_rf_pred)[2,2])/(length(val_set[,1]))
+Height_rf_pred_acc
+```
+
+Of the five accuracies returned, the best to worst fit for each of the variables are as follows
+
+1. Odor, `r Odor_rf_pred_acc`
+2. CapColor `r CapColour_rf_pred_acc`
+3. CapSurface `r CapSurface_rf_pred_acc`
+4. CapShape `r CapShape_rf_pred_acc`
+5. Height `r Height_rf_pred_acc`
+
+By far Odor is shown to be the best predictor or edibilty among the five variables. CapColor and CapSurface have very similar accuracies however from their confusion matracies we can see that CapColour gives far more false-positive values and equally CapSurface gives more false-negative values. Considering we are predicting a binary outcome a random guess is expected to return an accuracy of $50\%$ meaning that "Height" doesn't provide much information when trying to predict edibility.
+
+```{r}
+RF_pred <- predict(RF, val_set)
+table(val_set[,1], RF_pred)
+
+RF_pred_acc <- (table(val_set[,1],RF_pred)[1,1] + table(val_set[,1],RF_pred)[2,2])/(length(val_set[,1]))
+RF_pred_acc
+```
+
+In comparison to all five variables being used together this produces only a marginally higher accuracy to when we used just "Odor" alone producting an accuracy of `r RF_pred_acc`
+
+## 2. Using cross-validation, perform a model selection to determine which features are useful for making predictions using a Random Forest. As above, use the number of mushrooms correctly classified as the criterion for deciding which model is best. You might try to find a way to loop over all 32 possible models (ignore the possibility of no input variables. Hint: you can use allCombs in the dagR package to generate all combinations of the numbers 1 to n). Or select features ‘greedily’, by picking one at a time to add to the model. Present your results in the most convincing way you can.
+
+By extracting our dependent varaibles from the first row of "mushroom_data.csv). We use the \textbf{allCombs()} function to produce all combinations of the dependent variables. We will be using these combinations to perform cross-validation and greedy selection to identify the variables most useful for prediction.
+
+
+```{r}
+column_names <- colnames(mushroom_data)[2:6]
+combinations <- allCombs(column_names)
+```
+
+Here we are taking the combinations and transforming them into an appropriate form our \textbf{randomForest()} command formula input. The fomulas to be used are printed below.
+
+```{r}
+c=0
+formulas = rep(NA, length(combinations[,1]))
+for (i in combinations[,1]){
+  c = c+1
+  if (c == 1){ next }
+  eachline <- combinations[c,]  
+  eachline <- as.list(eachline[!is.na(eachline)])
+  feature_combos = paste(eachline, collapse=" + ")
+  RF_input <- paste0(colnames(mushroom_data)[1:1], " ~ ", feature_combos)
+  formulas[c] <- RF_input
+}
+print(formulas)
+```
+
+We have a total of 32 formulas with an "NA" value at the beginning though unnecessary, this value wont effect our results. We can to automate the implementation of a random forest for each formula. 
+
+For each iteration we will sample different test and validation sets from our dataset to generate a random forest for each formula. From each of these we will we will save the accuracies of each model and make a record the best model to be used in later analysis.
+
+```{r eval=FALSE}
+best_model = rep(NA, 50)
+average_tot_accs = rep(0, length(formulas))
+RF_prec_av= rep(0, length(formulas))
+for (iteration in 1:50) {
+  test_train_split = 0.7
+  train_num = sample(nrow(mushroom_data), test_train_split*nrow(mushroom_data))
+  train_set <- mushroom_data[train_num,]
+  val_set <- mushroom_data[-train_num,]
+  RF_accs <- rep(NA,length(formulas))
+  RF_prec <- rep(NA,length(formulas))
+  for (i in 2:length(formulas)){
+    RF_input = formulas[i]
+    RF <- randomForest(formula = as.formula(RF_input), data = train_set)
+    RF_pred <- predict(RF, val_set)
+    RF_accs[i] <- (table(val_set[,1],RF_pred)[1,1] + table(val_set[,1],RF_pred)[2,2])/(length(val_set[,1]))
+    RF_prec[i] <- (table(val_set[,1],RF_pred)[1,1])/(table(val_set[,1],RF_pred)[1,1] + table(val_set[,1],RF_pred)[2,1])
+  }
+  best_model[iteration] = formulas[which.max(RF_accs)]
+  average_tot_accs = average_tot_accs + RF_accs/50
+  RF_prec_av = RF_prec_av + RF_prec/50
+}
+accuracies_df = data.frame(
+  models = formulas,
+  accuracies = average_tot_accs)
+
+precisions_df = data.frame( models = formulas,
+  precisions = RF_prec_av)
+
+best_model_df = data.frame(best_model)
+
+saveRDS(best_model_df, "best_model_df.RDS")
+saveRDS(accuracies_df, "accuracies_df.RDS")
+saveRDS(precisions_df, "precisions_df.RDS")
+```
+
+Having saved our model we can load the variables to plot how many times a given model produced the highest accuracy when predicting edible mushrooms.
+
+
+```{r echo=FALSE}
+best_model_df = readRDS("best_model_df.RDS")
+accuracies_df = readRDS("accuracies_df.RDS")
+precisions_df = readRDS("precisions_df.RDS")
+
+ggplot(best_model_df, aes(x = best_model)) + 
+  geom_bar(color="black", fill="white") +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  geom_text(aes(label = (..count..), y= ((..count..)/sum(..count..))), stat="count",color = "black", vjust = -1) +
+  xlab("Models")+
+  ylab("Count")+
+  ggtitle("Cross Validation Best Model each Iteration") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+From the bargraph above we can see the model which performed best in the model selection was "Edible ~ CapShape + CapSurface + CapColor + Odor" scoring the highest accuracy in thirty-eight out of fifty iterations. The second highest was all five variables used together and finally "Edible ~ CapShape + CapColor + Odor + Height" managed to perform best in three of the samples and "Edible ~ CapShape + CapSurface + Odor + Height" performed the best once.
+```{r}
+accuracies_df = accuracies_df[complete.cases(accuracies_df), ]
+
+q = ggplot(accuracies_df, aes(x = reorder(models, accuracies), y = accuracies)) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label = round(accuracies, 4), y = accuracies), hjust = 1, color = "white", size = 3) +
+  ggtitle("Average Accuracy for each Model") +
+  xlab("Accuracy (percentage)")+
+  ylab("Models")+
+  coord_flip() +
+  theme_minimal()
+
+q
+```
+From this table we can see all the possible models ordered by their average accuracy across all fifty iterations. Performing a greedy selection process we can observe the algorithm would first identify "Odor" as the strongest sole predictor classifying over 98\% of the data correctly. The next two-variable model of preferance would be that which uses both "Odor" and "CapColor", the three-variable model would next incorporate "CapShape". The four-variable model of preferance incorporates "CapSurface" and is the most accurate model produced by the cross validation. This of course infers that "Height" is the variable worst predictor in mushroom edibility. 
+
+From the greedy selection process applied to the average accuracies, we can conclude the variables with the best to worst predictability are as follow:
+
+1. "Odor"
+2. "CapColor"
+3. "CapShape"
+4. "CapSurface"
+5. "Height"
+
+These are very close to the order found in Question 1 with only "CapShape" and "CapSurface" having changed position.
+
+```{r eval=FALSE}
+saveRDS(best_rf, "name.RDS")
+```
+```{r echo=FALSE}
+#remove(best_rf)
+
+best_rf = readRDS("name.RDS")
+```
+
+## 3. Would you use this classifier if you were foraging for mushrooms? Discuss with reference to factors that you identified as important and the probability of posioning yourself.
+
+The problem with using this model for foraging is that it is the most accurate model meaning to say that this will return the highest percentage of true values (positive and negative) across the validation dataset. This does not mean to say that it is the safest method for finding edible mushrooms. 
+
+Below we show a generalised $2\times2$ confusion matrix.
+
+```{r}
+tp <- matrix(c("TP","|","FP","------------","-","------------","FN","|","TN"),ncol=3,byrow=TRUE)
+colnames(tp) <- c("Predict True","","Predict False")
+rownames(tp) <- c("Actual True","","Actual False")
+tp <- as.table(tp)
+tp
+```
+This consists of True Positives (TP), False Positives (FP), False Negatives (FN) and True Negatives (TN) where the rows are given as actual values and the columns are given as our predicted values.
+
+Accuracy is found by taking the sum of the trace of the confusion matrix divided by the sum of the validation set ($"\frac{TP+ TN}{TP + FN + FP + TN}$) as this shows how many of our predictions were correct as a percentage of the whole validation set. When using a model where the "False Negative" results are particularly "sensitive" meaning that any false negative predicted can produce a detrimental outcome, Precision can be a more suitable metric by which to choose the best model.
+
+Precision is given as ($"\frac{TP}{TP+ FN}$) meaning the percentage of TP's predicted as a proportion of our values predicted as positive. With a high precision, when we predict a mushroom to be edible or not we can be confident in our prediction.
+
+
+```{r}
+fn = 0
+best_rf <- randomForest( Edible ~ CapShape + CapSurface + CapColor + Odor, data = train_set, importance = TRUE)
+best_rf_pred <- predict(best_rf, val_set)
+table(val_set[,1],best_rf_pred)
+
+best_rf_pred_acc <-(table(val_set[,1],best_rf_pred)[1,1] + table(val_set[,1],best_rf_pred)[2,2])/(length(val_set[,1]))
+
+best_rf_pred_precision <-(table(val_set[,1],best_rf_pred)[1,1])/(table(val_set[,1],best_rf_pred)[1,1] + table(val_set[,1],best_rf_pred)[2,1])
+
+
+fn = table(val_set[,1],best_rf_pred)[2,1]
+
+best_rf_pred_precision
+
+```
+
+To recall, the precision we returned for our model excluding "Height" is equal to `r best_rf_pred_precision`. This classifies all points correctly except for `r fn` "false-negative" values. This means that no "false-positives" are predicted, though given the presented situation, these would be harmless as we would only omit some mushrooms which were not at all poisonous. However these `r fn` "false-negative" values are conversely very dangerous as `r fn` mushrooms we believe to be safe to eat are actually poisonous. This is why "false-negative" values effect our precision as this is a measure of how precise our results are. 
+
+To use a model for foraging we would then want to find the one with the highest precision. Therefore we will return the average precision of the fifty iterations for each model.
+```{r}
+precisions_df = precisions_df[complete.cases(precisions_df), ]
+
+p = ggplot(precisions_df, aes(x = reorder(models, precisions), y = precisions)) + 
+  geom_bar(stat="identity") +
+  geom_text(aes(label = round(precisions, 4), y = precisions), hjust = 1, color = "white", size = 3) +
+  ggtitle("Average Precision for each Model") +
+  xlab("Precision (percentage)")+
+  ylab("Models")+
+  coord_flip() +
+  theme_minimal()
+
+p
+```
+
+From the table we can conclude that the model which would be best to use for foraging with the given variables, is the "Edible ~ CapShape + CapSurface + CapColor + Odor" model as it has the highest precision of `r best_rf_pred_precision` as well as the highest accuracy.
+
+Using this model as a "foraging guide", by omitting to pick/eat mushrooms with characteristics shown in the 18 false-positives of our model we could ensure that no mushrooms we pick are poisonous. For example, the 18 cases of poisonous mushrooms which we predicted as edible are shown below.
+
+```{r}
+df = val_set %>% filter(Edible == "Poisonous")
+df$Predictions <- predict(best_rf, df) 
+df %>% filter(Predictions == "Edible")
+```
+
+In comparison with all the variable possibilities shown in the mushroom summary below. We can observe from "CapShape" that most of our false negatives($\frac{13}{18}$) have a "Flat", four others have a "Bell" and only one has a "Knobbed" cap shape.
+
+Again from "CapSurface" column the false negatives have the attributes of "Smooth", "Fibrous" and "Scaly" surfaces. And from "CapColor" our false negatives only have the colours "White", "Pink", "Brown" and "Buff".
+```{r}
+summary(mushroom_data)
+```
+
+In practice we can show from the following results.
+```{r}
+df = mushroom_data %>% filter(Edible == "Edible")
+df$Predictions <- predict(best_rf, df) 
+head(df %>% filter(Predictions == "Edible" & !(CapShape %in% c("Flat","Bell","Knobbed"))))
+```
+From the entire data set we have 1838 mushrooms which do not have a cap shape of "Flat","Bell" or "Knobbed" which were also predicted by our model to be edible meaning we could be certain that eating these mushrooms would be okay.
+
+```{r}
+df$Predictions <- predict(best_rf, df) 
+head(df %>% filter(Predictions == "Edible" & !(CapSurface %in% c("Smooth", "Fibrous", "Scaly"))))
+```
+We can see that there do not exist any mushrooms predicted to be edible with a cap surface with "Grooves" so this variable would not be useful in combination with predictive model for foraging.
+
+```{r} 
+df$Predictions <- predict(best_rf, df) 
+head(df %>% filter(Predictions == "Edible" & !(CapColor %in% c("White", "Pink", "Brown", "Buff"))))
+```
+Using cap colour as our next variable we find 1978 mushrooms which are of a different colour to "White", "Pink", "Brown" or "Buff" and also predicted safe by our model.
+
+In conclusion, from all the 8124 mushrooms in the dataset provided. Using our model to check edibility and then omitting to eat any mushrooms with the attributes of false negatives we can find at least 1978 mushrooms which would be safe to eat. We also know that if we see a mushroom the surface attribute "Grooves", we do not need to refer to our model as this mushroom is certainly poisonous.
+
+
+
